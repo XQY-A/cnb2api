@@ -4,8 +4,11 @@
 
 **将 CNB 云原生工作区内网 AI 转化为高可用生产级 API 网关**
 
-*OpenAI + Anthropic 双协议栈 · Claude Code 零配置直连 · 0 依赖 · v5.2 自愈高可用 · 终端额度看板*
+**每月免费获取最高 2 亿 DeepSeek Tokens · 零外部依赖 · 7×24h 自愈高可用**
 
+*OpenAI + Anthropic 双协议栈 · Claude Code 零配置直连 · v5.2 架构 · 终端额度看板*
+
+[![Tokens](https://img.shields.io/badge/DeepSeek%20Tokens-%E6%AF%8F%E6%9C%88%E6%9C%80%E9%AB%98%202%20%E4%BA%BF%20(Free)-10a37f?style=flat&logo=deepseek)](#quota-calc)
 [![test](https://github.com/dengyie/cnb2api/actions/workflows/test.yml/badge.svg)](https://github.com/dengyie/cnb2api/actions/workflows/test.yml)
 ![node](https://img.shields.io/badge/node-%E2%89%A522-brightgreen)
 ![dependencies](https://img.shields.io/badge/dependencies-0-success)
@@ -15,7 +18,7 @@
 
 </div>
 
-> **一句话简介**：CNB 每月免费赠送 **500~1,166 AI Credits** 与 **1,600 核时**，但其 AI 端点严格受限于工作区内网与流水线临时 Token，且容器每天过夜回收。**cnb2api** 部署在工作区内，零外部依赖将其转换为标准公网 API，并通过独创的 **v5.2 双保险自愈架构** 实现永久固定域名访问与 7×24 小时高可用。
+> **一句话简介**：CNB 每月向每个认证组织免费赠送 **500~1,166 AI Credits** 与 **1,600 核时**。搭配官方 Prompt Cache，**每月最高可享约 2 亿 DeepSeek Tokens 免费额度**！但该 AI 端点严格受限于工作区内网与流水线临时 Token，且容器每天过夜回收。**cnb2api** 部署在工作区内，零外部依赖将其转换为标准公网 API，并通过独创的 **v5.2 双保险自愈架构** 实现永久固定域名访问与 7×24 小时高可用。
 
 ---
 
@@ -23,6 +26,7 @@
 
 | 维度 | cnb2api（本项目） | 社区逆向 NPC 方案 | 直接公网调用 |
 |:---|:---|:---|:---|
+| **每月可用额度** | **最高 ~2 亿 DeepSeek Tokens**（1,166 Credits + 缓存优化） | 随时受限、被风控限频 | 0（物理隔离无法调用） |
 | **调用途径** | **官方工作区内网端点** | 网页前端匿名游客 NPC 接口 | 官方公网端点 |
 | **账号合规** | **100% 官方合规**，消耗自有正规配额 | 逆向抓包、违反 ToS、易封号 | 无法调用（网络策略拦截） |
 | **网络可达性** | 内网反代 + 动态中继，**公网稳定访问** | 需维护无头浏览器/代理池抓 CSRF | ❌ 403 `Blocked by network policy` |
@@ -38,6 +42,9 @@
 
 ### 核心特性
 
+- 💰 **每月最高 2 亿 DeepSeek 免费 Tokens**：
+  - 充分释放 CNB 官方每月赠送的 500~1,166 AI Credits。
+  - 官方底层自带 **30 倍 Prompt Cache 缓存折扣**。在编程开发、Claude Code、Agent 多轮循环等高频上下文复用场景下，折算综合可用量高达 **2 亿 Tokens/月**，彻底告别商业 API 用量焦虑。
 - ⚡ **双协议栈原生支持**：
   - **OpenAI 兼容**：`/v1/chat/completions` 与 `/v1/models`，支持流式 SSE 透传与忠实的非流式状态机聚合（完整回填 `usage`、真实 `credit` 扣费、`tool_calls` 与 `finish_reason`）。
   - **Anthropic 兼容**：`/v1/messages` 与 `/v1/messages/count_tokens`，**Claude Code CLI 零中间件直连**，完整支持思考链（thinking）、多轮工具调用与事件流。
@@ -70,7 +77,7 @@ https://api.cnb.cool/<org>/<repo>/-/ai/chat/completions (官方 AI 核心端点)
 
 工作区被当作**牲口而非宠物（Cattle, not Pet）**：
 1. **定时自愈**：平台内网 cron（`*/5 * * * *`）探活，发现工作区停止自动发起 `workspace/start`。
-2. **开机自注册**：工作区启动后执行 `start.sh`，将新分配的子域名 POST 到中继的 `/ops/register`，Nginx 自动更新 upstream 并 reload。
+2. **开机自注册**：工作区启动后执行脚本（`deploy/start.sh`），将新分配的子域名 POST 到中继的 `/ops/register`，Nginx 自动更新 upstream 并 reload。
 3. **外部兜底**：VPS 外部看门狗（`cnb-watchdog.sh`）监控固定域名，防范 CI 平台长时间无提交导致的定时任务休眠。
 
 ---
@@ -113,14 +120,23 @@ curl https://ai.example.com/v1/chat/completions \
 
 ---
 
-## 额度与成本测算
+<span id="quota-calc"></span>
+## 额度与成本测算：如何做到每月 2 亿 Tokens？
 
-基于生产环境长期运行实测数据：
+这是基于长期线上实测的真实扣费数据，非营销宣传：
 
 | 资源配额 | 每月免费总量 | 消耗与折算说明 |
 |:---|:---|:---|
-| **AI Credits** | **500 ~ 1,166** | 实测未命中缓存约 **2.3 万 tokens/credit**；命中 Prompt Cache 降至原价 1/30。90% 缓存命中率下，1,166 credits ≈ **2 亿 tokens/月**。 |
-| **算力核时** | **1,600 核时** | `runner.cpus: 2` 工作区满载运行 30 天 = **1,440 核时**（在免费池内）。无需刻意关机。 |
+| **AI Credits** | 基础 **500**，完成 *hello-cnb* 闯关后达 **1,166** | 每一次 AI 请求响应的 `usage` 均上报真实扣费 `credit`。结合 Prompt Cache 最高可换算 **~2 亿 Tokens/月**。 |
+| **算力核时** | **1,600 核时**（dev + CI 共享池） | `runner.cpus: 2` 反代工作区整月 30 天 7×24h 不间断运行仅消耗 **1,440 核时**（完全在免费池内），无需关机省核时。 |
+
+> 💡 **2 亿 Tokens/月的实测换算逻辑**：
+> 1. **官方基础定价**：对 `deepseek-v4-flash` 实测，全新未命中缓存的请求约 9,000 tokens 花费 0.39 credit（约 **2.3 万 tokens / credit**）。
+> 2. **官方 Prompt Cache 30倍优惠**：命中 CNB 的 prompt 缓存后降至 **~0.01 credit**，相当于基准价格的 **1/30**（约 **70 万 tokens / credit**）。
+> 3. **综合场景折算**：在 Cursor、Claude Code、Agent 编码等多轮对话和长 System Prompt 场景下，上下文缓存命中率通常在 80%~95%（取典型 **90% 命中率**）：
+>    $$\text{综合成本} = 10\% \times 1 + 90\% \times \frac{1}{30} \approx 13\% \text{ 原价} \implies \approx 17.7\text{ 万 tokens / credit}$$
+>    $$\text{月度额度} = 1,166\text{ credits} \times 17.7\text{ 万 tokens} \approx \mathbf{2.06\text{ 亿 tokens / 月}}$$
+> 4. 终端执行 `npm run quota` 可随时查看你当前组织账号的实时剩余额度。
 
 ---
 
