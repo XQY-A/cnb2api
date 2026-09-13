@@ -2,7 +2,9 @@
 
 # cnb2api
 
-**把 CNB 免费 AI 额度,变成一个标准的 OpenAI 兼容 API。**
+**将 CNB 云原生工作区内网 AI 转化为高可用生产级 API 网关**
+
+*原生支持 OpenAI + Anthropic 双协议栈 · Claude Code 零配置直连 · 0 依赖 · v5.2 双保险自愈高可用 · 终端额度看板*
 
 [![test](https://github.com/dengyie/cnb2api/actions/workflows/test.yml/badge.svg)](https://github.com/dengyie/cnb2api/actions/workflows/test.yml)
 ![node](https://img.shields.io/badge/node-%E2%89%A522-brightgreen)
@@ -13,20 +15,49 @@
 
 </div>
 
-CNB 给每个实名组织每月一份免费 AI 额度——但它只能在 CNB 云工作区**内部**
-调用(端点需要流水线 `CNB_TOKEN` 和 CNB 内网)。**cnb2api** 在工作区里跑一个
-极小的反向代理,把它变成一个稳定的 `https://…/v1/chat/completions` 地址,
-任何 OpenAI 客户端都能从任何地方调用。
+CNB（云原生构建平台）为每个实名认证组织每月免费提供丰厚的开发者资源：**500 ~ 1,166 AI Credits**（搭配 Prompt Cache 相当于最高 **~2 亿 tokens** 可用量）与 **1,600 核时** 算力。然而，官方内置的 AI 对话补全端点存在严格的网络与环境限制：
 
-- 🔓 **生而合规。** 只走**官方文档化**的工作区 AI 端点,用 CNB 自己签发的
-  流水线 `CNB_TOKEN`——不逆向前端接口、不抓匿名会话、不跟平台规则对着干。
-- ♻️ **扛得住每天回收。** CNB 过夜回收工作区、子域名每次重启都变。一个保活
-  循环自动自愈,客户端始终用同一个固定 URL、完全无感——在易逝的机器上攒出
-  一个常年在线的端点。
-- 🪶 **零依赖。** 只用 Node 22+ 内置能力(`fetch` / `AbortSignal` / streams),
-  测试跑内置的 `node:test`。没有任何 `npm install`。
-- 📊 **终端里看额度。** 一条命令展示 AI credits 与核时——CNB 生态里独一份的
-  额度工具。
+1. 🔒 **内网物理隔离与流水线鉴权**：端点严格限定在 CNB 工作区内网（公网访问直接被网络策略拦截报 403 `Blocked by network policy`）；且鉴权必须使用流水线即时签发的临时 `CNB_TOKEN`（个人访问令牌报 403 `OpenAPI only allowed in pipeline`）。外部 IDE、Cursor、Claude Code 或三方 API 网关无法直连。
+2. 🌊 **强制流式输出与模型路由**：官方 API 强制要求 `stream: true`（非流式请求直接报错 11101），且所有模型（如 deepseek-v4-flash、glm-5.3-flash 等）在底层网关经历统一路由与映射，需要健壮的协议转换与状态聚合。
+3. ⏳ **易逝性云工作区生命周期（Cattle, not Pet）**：工作区无连接 10 分钟自动关机、单次运行最长 18 小时、凌晨 4-6 点强制「环境不过夜」回收；每次重新启动分配的端口代理子域名（`{subdomain}-9001.cnb.run`）均随机变化。
+4. ⚠️ **社区逆向方案的脆弱与合规风险**：社区同类项目多采用抓取前端匿名 NPC 聊天接口、无头 Chromium 会话池或逆向 CSRF 的方案。不仅缺乏原生 Tool Calling 支持，更易因平台改版/风控而彻底失效。
+
+---
+
+**cnb2api** 为此而生：它是一个专为 CNB 工作区打造的**极简、零依赖、100% 官方合规的高可用反向代理网关**。直接运行在工作区内网，不仅将官方内网 AI 端点无缝映射为标准稳定的公网接口，更独创 **v5.2 零长效凭据 + 双保险自愈架构**，在易逝的临时容器之上提供 7×24 小时高可用服务。
+
+### 核心特性
+
+- 🔓 **100% 官方合规正道**：只调用官方文档化的工作区 AI 端点，完全依靠平台原生流水线临时凭据。不逆向、不爬虫、不碰前端 NPC 会话池，原生支持 Function / Tool Calls。
+- ⚡ **OpenAI + Anthropic 双协议栈**：
+  - **OpenAI 兼容**：标准 `/v1/chat/completions` 与 `/v1/models`，支持流式 SSE 透传与忠实的非流式状态机聚合（完整回填 `usage`、真实 `credit` 扣费、`tool_calls` 与 `finish_reason`）。
+  - **Anthropic 原生兼容**：原生 `/v1/messages` 与 `/v1/messages/count_tokens`，**Claude Code CLI 零中间件直连**（设置 `ANTHROPIC_BASE_URL` 与 `ANTHROPIC_AUTH_TOKEN` 即用），支持流式事件序列、thinking 思考链与双向工具调用映射。
+  - 🛡️ **独家出站中性化规避（Upstream Neutralizer）**：自动等价重写 Claude Code 内部计费头与特征提示词短语，语义无损放行，彻底消除上游网关对 Claude Code 的 11128 误报拦截。
+- ♻️ **v5.2 零凭据泄露 + 双保险自愈高可用**：
+  - **凭据零保管**：工作区无任何长期静态 Token。定时自愈流水线每次使用平台现签现销的临时凭据，过期风险彻底归零。
+  - **动态域名自动跟随**：工作区开机通过 `start.sh` 自动向中继注册新子域名（`/ops/register`），中继自动热重载 upstream，客户端固定域名与 Key 永久不变。实测完整自愈恢复仅需 **~2 分 13 秒**。
+  - **v5.2 静默自愈双保险**：针对云平台连续多日无 commit 自动休眠 crontab 的平台机制，外部看门狗（`cnb-watchdog.sh`）在检测到异常时静默触发带 30 分钟冷却锁的 OpenAPI 应急拉起，23 秒恢复且真故障才告警，告警噪音降为零。
+- 🪶 **真正的零外部依赖（Zero Dependencies）**：100% 基于 Node.js 22+ 内置模块实现（原生 `fetch`、`ReadableStream`、`crypto.timingSafeEqual`、`node:test`），零 `npm install`，毫秒级冷启动，内存占用极低。
+- 📊 **全链路用量监控与独家额度看板**：
+  - 终端一键查额度 `cnb2api-quota`：红黄绿 ANSI 进度条可视化展示 AI credits、开发核时、CI 核时及在途冻结额度，支持 `--json` 与 `--line`，不启动反代也能查。
+  - 内存级 `GET /usage` 统计端点，按 boot 换代隔离并支持 UTC+8 每日对账，完美对接自建看板与探针监控。
+
+---
+
+### 技术方案横向对比
+
+| 维度 | cnb2api（本项目） | 社区逆向 NPC 接口方案 | 直接外部调用 |
+|:---|:---|:---|:---|
+| **调用途径** | **官方工作区内网 AI 端点** | 网页前端匿名游客 NPC 聊天接口 | 官方 AI 端点（公网） |
+| **合规与账号** | **100% 官方合规**，消耗自己组织正规配额 | 灰产逆向、违反 ToS、易被平台风控 | 无法调用（网络策略拦截） |
+| **网络可达性** | 工作区反代 + 动态中继，**公网稳定访问** | 需维护无头浏览器/代理池抓 CSRF | ❌ **403 Blocked by network policy** |
+| **鉴权机制** | 流水线即时签发 `CNB_TOKEN`（零保管） | 抓取网页 cookie / session | ❌ 个人令牌 403（仅允许流水线） |
+| **协议支持** | **OpenAI + Anthropic 双协议栈** | 仅部分模拟 OpenAI 基础文本 | 无 |
+| **Claude Code 直连** | **原生直连**（内置 11128 误报规避） | ❌ 不支持（缺少 tool calling / 被拦截） | 无 |
+| **Tool Calling / 函数调用** | **原生完整支持**（流式增量合并） | ❌ 不支持（前端接口无 tools 能力） | 无 |
+| **外部运行依赖** | **0 依赖**（Node.js 22+ 内置，秒启） | 依赖 Chromium、Puppeteer 等重型依赖 | 无 |
+| **高可用机制** | **v5.2 双保险自愈**（内网 cron + 外部看门狗） | 单点容易随前端改版报废 | 无 |
+| **额度透明度** | **内置终端看板 CLI** + `/usage` 统计 | 黑盒无账单，不可视 | 只能进网页控制台深处查看 |
 
 ## 工作原理
 
