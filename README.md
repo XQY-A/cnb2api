@@ -4,8 +4,11 @@
 
 **Turn CNB Cloud Workspace In-Network AI into a Production-Ready API Gateway**
 
-*OpenAI + Anthropic Dual Protocols · Zero-Config Claude Code Direct Connect · Zero Dependencies · v5.2 Self-Healing HA · Terminal Quota Dashboard*
+**Get Up to 200M Free DeepSeek Tokens Monthly · Zero External Dependencies · 7×24h Self-Healing HA**
 
+*OpenAI + Anthropic Dual Protocols · Zero-Config Claude Code Direct Connect · v5.2 Architecture · Terminal Quota Dashboard*
+
+[![Tokens](https://img.shields.io/badge/DeepSeek%20Tokens-Up%20to%20200M%2Fmo%20(Free)-10a37f?style=flat&logo=deepseek)](#quota-calc)
 [![test](https://github.com/dengyie/cnb2api/actions/workflows/test.yml/badge.svg)](https://github.com/dengyie/cnb2api/actions/workflows/test.yml)
 ![node](https://img.shields.io/badge/node-%E2%89%A522-brightgreen)
 ![dependencies](https://img.shields.io/badge/dependencies-0-success)
@@ -15,7 +18,7 @@ English · [简体中文](README.zh-CN.md)
 
 </div>
 
-> **TL;DR**: CNB grants verified orgs **500 ~ 1,166 AI Credits** and **1,600 compute core-hours** monthly for free. However, its AI completion endpoint is locked inside the workspace intranet and guarded by ephemeral pipeline tokens, while cloud workspaces are recycled daily. **cnb2api** runs inside the workspace, converts it into a standard public API with zero dependencies, and leverages a **v5.2 dual-watchdog self-healing architecture** to deliver 7×24 HA under a permanent domain.
+> **TL;DR**: CNB grants verified orgs **500 ~ 1,166 AI Credits** and **1,600 compute core-hours** monthly for free. Combined with CNB's 30x prompt caching discount, you can enjoy **up to ~200 Million DeepSeek Tokens per month for free**! However, the AI completion endpoint is strictly locked inside the workspace intranet with ephemeral pipeline tokens, while containers are recycled daily. **cnb2api** runs inside the workspace, converts it into a standard public API with zero dependencies, and leverages a **v5.2 dual-watchdog self-healing architecture** to deliver permanent domain access and 7×24 HA.
 
 ---
 
@@ -23,6 +26,7 @@ English · [简体中文](README.zh-CN.md)
 
 | Dimension | cnb2api (This Project) | Community Web NPC Scrapers | Direct Public Calling |
 |:---|:---|:---|:---|
+| **Monthly Free Quota** | **Up to ~200M DeepSeek Tokens** (1,166 Credits + Prompt Cache) | Unstable, easily rate-limited or banned | 0 (Blocked by network isolation) |
 | **Access Route** | **Official Workspace Intranet Endpoint** | Web frontend anonymous NPC chat | Official Public Endpoint |
 | **Compliance & Account** | **100% Compliant**, consumes your org's quota | Violates ToS, scraping, ban risk | Cannot call (Network policy blocked) |
 | **Network Reachability** | Intranet proxy + dynamic relay, **Public stable access** | Requires headless browser/proxy pools for CSRF | ❌ 403 `Blocked by network policy` |
@@ -38,6 +42,9 @@ English · [简体中文](README.zh-CN.md)
 
 ### Key Features
 
+- 💰 **Up to 200M Free DeepSeek Tokens Monthly**:
+  - Fully unleashes the 500~1,166 monthly AI Credits provided for free by CNB.
+  - Native **30x Prompt Cache discount** on upstream completions. In typical coding assistant, Claude Code, and multi-turn Agent scenarios with high prompt reuse, effective capacity reaches **~200M tokens/month**.
 - ⚡ **Native Dual-Protocol Support**:
   - **OpenAI Compatible**: `/v1/chat/completions` and `/v1/models`, supporting SSE streaming and faithful non-streaming aggregation (reconstructing `usage`, exact `credit` costs, incremental `tool_calls`, and `finish_reason`).
   - **Anthropic Compatible**: `/v1/messages` and `/v1/messages/count_tokens`, enabling **Claude Code CLI direct connection** with full support for thinking blocks, tool calling, and event streams.
@@ -70,7 +77,7 @@ https://api.cnb.cool/<org>/<repo>/-/ai/chat/completions (Official AI core endpoi
 
 The workspace is treated as **cattle, not a pet**:
 1. **Cron Recovery**: An internal cron pipeline (`*/5 * * * *`) checks workspace health and calls `workspace/start` if stopped.
-2. **Auto-Registration**: On boot, `start.sh` POSTs the newly assigned subdomain to `/ops/register` on your relay, which reloads Nginx.
+2. **Auto-Registration**: On boot, `deploy/start.sh` POSTs the newly assigned subdomain to `/ops/register` on your relay, which reloads Nginx.
 3. **External Fallback**: An external VPS watchdog (`cnb-watchdog.sh`) monitors the fixed domain to guard against CI platform cron dormancy.
 
 ---
@@ -113,14 +120,23 @@ curl https://ai.example.com/v1/chat/completions \
 
 ---
 
-## Quota & Cost Estimates
+<span id="quota-calc"></span>
+## Quota & Cost Estimates: How to Get 200M Tokens Free Monthly
 
-Measured from live production deployments:
+Real production billing data measured over months of live operation (not marketing hype):
 
 | Resource Allowance | Free Monthly Quota | Cost & Capacity Notes |
 |:---|:---|:---|
-| **AI Credits** | **500 ~ 1,166** | Uncached: ~**23,000 tokens/credit**; Cached: drops to **~1/30** of base cost. At 90% prompt cache hit rate, 1,166 credits ≈ **~200M tokens/month**. |
-| **Compute Core-Hours** | **1,600 core-hours** | `runner.cpus: 2` running 30 days straight = **1,440 core-hours** (well within pool). No need to shut down. |
+| **AI Credits** | Base **500**, up to **1,166** after *hello-cnb* quest | Every response reports exact `credit` in `usage`. Combined with Prompt Cache, delivers **~200M DeepSeek Tokens/month**. |
+| **Compute Core-Hours** | **1,600 core-hours** (shared dev + CI pool) | A `runner.cpus: 2` workspace running 24/7 for 30 days costs **1,440 core-hours** (safely within the 1,600 pool). No need to stop the proxy. |
+
+> 💡 **The Math Behind 200M Free Tokens/Month**:
+> 1. **Base Upstream Rate**: Live measurements on `deepseek-v4-flash` show an uncached 9,000-token request costs ~0.39 credit (approx **23,000 tokens / credit**).
+> 2. **Official Prompt Cache 30x Discount**: Once prompt prefixes hit CNB's prompt cache, cost drops to **~0.01 credit**, slashing cost to **1/30** of base price (~**700,000 tokens / credit**).
+> 3. **Real-World Scenarios**: In coding assistants, Claude Code, and multi-turn Agent conversations with long system prompts and history reuse, cache hit rates typically sit at 80%~95% (assuming a realistic **90% cache hit rate**):
+>    $$\text{Blended Cost} = 10\% \times 1 + 90\% \times \frac{1}{30} \approx 13\% \text{ base cost} \implies \approx 177,000\text{ tokens / credit}$$
+>    $$\text{Monthly Total} = 1,166\text{ credits} \times 177,000\text{ tokens} \approx \mathbf{206\text{ Million tokens / month}}$$
+> 4. Run `npm run quota` anytime in your terminal to inspect your live remaining credits and consumption.
 
 ---
 
