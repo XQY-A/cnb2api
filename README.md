@@ -2,7 +2,9 @@
 
 # cnb2api
 
-**Your CNB free AI credits, served over a plain OpenAI-compatible API.**
+**Turn CNB Cloud Workspace In-Network AI into a High-Availability Production Gateway**
+
+*Native OpenAI + Anthropic Dual Protocol · Zero-Config Claude Code Direct Connect · Zero Dependencies · v5.2 Self-Healing HA · Terminal Quota Dashboard*
 
 [![test](https://github.com/dengyie/cnb2api/actions/workflows/test.yml/badge.svg)](https://github.com/dengyie/cnb2api/actions/workflows/test.yml)
 ![node](https://img.shields.io/badge/node-%E2%89%A522-brightgreen)
@@ -13,25 +15,49 @@ English · [简体中文](README.zh-CN.md)
 
 </div>
 
-CNB gives every verified org a monthly pool of free AI credits — but they're
-only reachable from **inside** a CNB cloud workspace (the endpoint needs a
-pipeline `CNB_TOKEN` and CNB-internal networking). **cnb2api** runs a tiny
-reverse proxy inside that workspace and turns it into a stable
-`https://…/v1/chat/completions` URL that any OpenAI client can call from
-anywhere.
+CNB (Cloud Native Builder) provides every verified organization with a generous, recurring monthly allowance: **500 ~ 1,166 AI Credits** (equivalent to up to **~200M tokens/month** with prompt caching) and **1,600 compute core-hours**. However, the official in-network AI completion endpoint is heavily locked down:
 
-- 🔓 **Above-board.** It uses only the **official, documented** workspace AI
-  endpoint with the pipeline `CNB_TOKEN` CNB itself issues — no reverse-engineered
-  front-end endpoints, no anonymous session scraping, nothing that fights the
-  platform's rules.
-- ♻️ **Survives daily recycling.** CNB reclaims workspaces overnight and the
-  subdomain changes on every restart. A keepalive loop heals that automatically,
-  so your clients keep one fixed URL and never notice — an always-on endpoint on
-  a throwaway machine.
-- 🪶 **Zero dependencies.** Node 22+ built-ins only (`fetch` / `AbortSignal` /
-  streams); tests run on the built-in `node:test` runner. Nothing to `npm install`.
-- 📊 **Quota in your terminal.** A one-command dashboard for your AI credits and
-  core-hours — the only such tool in the CNB ecosystem.
+1. 🔒 **Intranet Isolation & Pipeline Auth**: The endpoint is strictly isolated inside the CNB workspace network (public requests are blocked by network policy with HTTP 403 `Blocked by network policy`), and only accepts ephemeral pipeline `CNB_TOKEN` credentials (personal access tokens return HTTP 403 `OpenAPI only allowed in pipeline`). Local IDEs, Cursor, Claude Code, or third-party API aggregators cannot connect directly.
+2. 🌊 **Enforced Streaming & Model Mappings**: The upstream API mandates `stream: true` (non-streaming requests throw error 11101), and model names (such as `deepseek-v4-flash`, `glm-5.3-flash`, etc.) undergo internal gateway routing, requiring a robust transformation and aggregation layer.
+3. ⏳ **Ephemeral Cloud Workspace Lifecycle (Cattle, Not Pets)**: Workspaces automatically shut down after 10 minutes of inactivity, have an 18-hour session ceiling, and face mandatory overnight reclamation between 04:00 and 06:00 (UTC+8). On every restart, the generated port-proxy subdomain (`{subdomain}-9001.cnb.run`) drifts unpredictably.
+4. ⚠️ **Fragility & Risks of Scraping Approaches**: Community alternatives often reverse-engineer anonymous web NPC chat endpoints using headless Chromium, session pools, or CSRF scraping. These lack native Tool Calling, violate platform terms, and break whenever the web interface changes.
+
+---
+
+**cnb2api** is built to solve this: a **lightweight, zero-dependency, 100% compliant high-availability reverse proxy gateway** running directly inside your CNB workspace. It maps the internal AI endpoint to a permanent public URL, powered by an innovative **v5.2 zero-token & dual-watchdog self-healing architecture** that maintains 7×24 uptime on top of ephemeral cloud containers.
+
+### Key Highlights
+
+- 🔓 **100% Official & Compliant**: Strictly calls documented workspace AI endpoints using authentic platform pipeline tokens. No reverse-engineering, no web scraping, no anonymous session pools. Native Function / Tool Calling is fully supported.
+- ⚡ **First-Class Dual Protocol (OpenAI + Anthropic)**:
+  - **OpenAI Compatible**: Standard `/v1/chat/completions` and `/v1/models` with SSE streaming and faithful non-streaming state machine aggregation (complete backfilling of `usage`, exact `credit` charges, incremental `tool_calls`, and `finish_reason`).
+  - **Anthropic Messages Protocol Native**: Native `/v1/messages` and `/v1/messages/count_tokens` enabling **direct connection with Claude Code CLI** (`ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` out of the box), with full streaming event sequence, thinking / reasoning blocks, and bidirectional tool call translation.
+  - 🛡️ **Built-in Upstream Neutralizer**: Transparently rewrites Claude Code internal billing headers and signature prompt phrases to equivalent expressions, completely bypassing upstream 11128 false-positive blocks without altering user intent.
+- ♻️ **v5.2 Zero Long-Lived Credentials + Dual-Watchdog Self-Healing**:
+  - **Zero Token Leakage**: No static or long-lived platform tokens exist in the workspace. The self-healing cron pipeline uses ephemeral platform `CNB_TOKEN`s minted on the fly and destroyed upon task completion.
+  - **Automatic Dynamic Routing**: On boot, `start.sh` registers the new subdomain to your relay (`/ops/register`), which hot-reloads nginx upstream configurations. Client BaseURLs and API keys remain permanent. Full recovery drill takes **~2m 13s**.
+  - **v5.2 Silent Self-Healing Watchdog**: Circumvents CI platform cron dormancy (CNB pauses crons if no commits occur over multiple days). An external watchdog (`cnb-watchdog.sh`) detects stalled states and silently triggers fallback OpenAPI starts with a 30-minute cooldown lock—alerting only on true failures.
+- 🪶 **True Zero Dependencies**: Implemented entirely with Node.js 22+ built-ins (`fetch`, `ReadableStream`, `crypto.timingSafeEqual`, `node:test`). Zero `npm install`, sub-millisecond cold starts, minimal memory footprint.
+- 📊 **Terminal Quota Dashboard & Token Monitoring**:
+  - `cnb2api-quota` CLI: One-command ANSI progress bar dashboard displaying AI credits, dev core-hours, CI core-hours, and in-flight deductions directly from the official charge API. Supports `--json` and `--line` modes, runnable even when the proxy is offline.
+  - In-memory `GET /usage` accounting endpoint grouped by boot generation with UTC+8 daily rollups, ready for Komari or custom monitoring integrations.
+
+---
+
+### Technical Approach Comparison
+
+| Dimension | cnb2api (This Project) | Community NPC Reverse Proxies | Direct External Calling |
+|:---|:---|:---|:---|
+| **Access Route** | **Official Workspace Intranet AI Endpoint** | Web frontend anonymous visitor NPC chat | Official AI Endpoint (Public) |
+| **Compliance & Account** | **100% Compliant**, consumes your org's quota | Violates ToS, gray-market, ban risk | Cannot call (Network policy blocked) |
+| **Network Reachability** | Workspace proxy + dynamic relay, **Public stable access** | Requires headless browser/proxy pools for CSRF | ❌ **403 Blocked by network policy** |
+| **Auth Mechanism** | Ephemeral `CNB_TOKEN` via pipeline (Zero leakage) | Web cookies / session scraping | ❌ Personal tokens 403 (Pipeline only) |
+| **Protocol Support** | **OpenAI + Anthropic Dual Protocol Stack** | Partial OpenAI text-only imitation | None |
+| **Claude Code Direct** | **Native Direct Connect** (with 11128 workaround) | ❌ Unsupported (no tools / blocked) | None |
+| **Tool / Function Calling** | **Native full support** (incremental streaming merge) | ❌ Unsupported (frontend has no tools) | None |
+| **External Dependencies** | **Zero Dependencies** (Node.js 22+ built-in, instant boot) | Heavy dependencies (Chromium, Puppeteer) | None |
+| **High Availability** | **v5.2 Dual-Watchdog Self-Healing** (Internal cron + watchdog) | Single point of failure on UI changes | None |
+| **Quota Transparency** | **Built-in Terminal CLI Dashboard** + `/usage` metrics | Black-box, no usage tracking | Only visible deep in web console |
 
 ## How it works
 
